@@ -11,7 +11,8 @@ MONGO_URI = os.environ.get('MONGO_URI')
 
 # الاتصال بقاعدة البيانات
 client = MongoClient(MONGO_URI)
-db = client['GDS_STORE_DB']  # يمكنك كتابة اسم قاعدة بياناتك هنا بدلاً من GDS_STORE_DB إذا أردت
+db = client['GDS_STORE_DB']
+users_collection = db['users'] # مجموعة لتخزين المستخدمين في المونجو
 
 # التوكن الخاص بي
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
@@ -26,7 +27,6 @@ def home():
     return "البوت يعمل بنجاح!"
 
 def run():
-    # Render يمرر المنفذ تلقائياً عبر هذا المتغير
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -54,29 +54,26 @@ SERVICE_NAMES = {
     'subs': '➕ اشتراكات'
 }
 
-# دالة تحديث العداد وضبط النص ليطابق شروط تليجرام (أقل من 120 حرف)
+# دالة تحديث العداد والاعتماد على قاعدة بيانات مونجو دي بي
 def update_user_count(chat_id=None):
-    filename = "users.txt"
     try:
-        with open(filename, "r", encoding="utf-8") as f:
-            users = f.read().splitlines()
-    except FileNotFoundError:
-        users = []
-
-    if chat_id and str(chat_id) not in users:
-        with open(filename, "a", encoding="utf-8") as f:
-            f.write(f"{chat_id}\n")
-        users.append(str(chat_id))
+        if chat_id:
+            # إضافة المستخدم فقط إذا لم يكن موجوداً مسبقاً (لحمايته من التكرار)
+            users_collection.update_one(
+                {"chat_id": str(chat_id)},
+                {"$set": {"chat_id": str(chat_id)}},
+                upsert=True
+            )
         
-    total_users = len(users)
-    
-    try:
-        # نص مختصر، شامل واحترافي يلتزم بحدود الـ 120 حرفاً تماماً لضمان عدم حدوث خطأ
+        # جلب العدد الإجمالي الفعلي للمستخدمين من قاعدة البيانات
+        total_users = users_collection.count_documents({})
+        
+        # نص النبذة التعريفية للبوت
         short_bio = f"GDS STORE 💥 لخدمات الفيسبوك المتكاملة وسرعة التنفيذ. للتواصل: @Hatemgds | 👥 {total_users}"
         
         bot.set_my_short_description(short_bio)
     except Exception as e:
-        print(f"فشل تحديث النبذة: {e}")
+        print(f"فشل تحديث النبذة عبر المونجو: {e}")
 
 # 1. الترحيب والقائمة الرئيسية
 @bot.message_handler(commands=['start'])
@@ -177,9 +174,6 @@ def callback_query(call):
                 bot.send_message(MY_CHAT_ID, alert_text, parse_mode="Markdown")
                 bot.answer_callback_query(call.id, "✅ تم إرسال طلبك بنجاح!")
                 bot.send_message(chat_id, "✅ تم إرسال طلبك بالكامل للإدارة بنجاح! جاري المراجعة والتنفيذ، انتظر لقطة شاشة التأكيد قريباً.")
-                
-                with open("orders.txt", "a", encoding="utf-8") as f:
-                    f.write(f"المستخدم: {chat_id}, الخدمة: {order_data['service']}, الكمية: {order_data['qty']} - طلب مكتمل\n")
             except Exception as e:
                 print(f"فشل إرسال التنبيه الختامي: {e}")
             
