@@ -4,15 +4,6 @@ import time
 import os
 from flask import Flask
 from threading import Thread
-from pymongo import MongoClient
-
-# جلب رابط المونجو من متغيرات البيئة
-MONGO_URI = os.environ.get('MONGO_URI')
-
-# الاتصال بقاعدة البيانات
-client = MongoClient(MONGO_URI)
-db = client['GDS_STORE_DB']
-users_collection = db['users'] # مجموعة لتخزين المستخدمين في المونجو
 
 # التوكن الخاص بي
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
@@ -27,6 +18,7 @@ def home():
     return "البوت يعمل بنجاح!"
 
 def run():
+    # Render يمرر المنفذ تلقائياً عبر هذا المتغير
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -54,26 +46,52 @@ SERVICE_NAMES = {
     'subs': '➕ اشتراكات'
 }
 
-# دالة تحديث العداد والاعتماد على قاعدة بيانات مونجو دي بي
-def update_user_count(chat_id=None):
+# دالة تحديث العداد وضبط النص ليطابق شروط تليجرام (أقل من 120 حرف) وإرسال تنبيه للمالك
+def update_user_count(message=None):
+    filename = "users.txt"
     try:
-        if chat_id:
-            # إضافة المستخدم فقط إذا لم يكن موجوداً مسبقاً (لحمايته من التكرار)
-            users_collection.update_one(
-                {"chat_id": str(chat_id)},
-                {"$set": {"chat_id": str(chat_id)}},
-                upsert=True
-            )
+        with open(filename, "r", encoding="utf-8") as f:
+            users = f.read().splitlines()
+    except FileNotFoundError:
+        users = []
+
+    # إذا تم تمرير رسالة وجاء مستخدم جديد
+    if message and str(message.chat.id) not in users:
+        chat_id = message.chat.id
+        with open(filename, "a", encoding="utf-8") as f:
+            f.write(f"{chat_id}\n")
+        users.append(str(chat_id))
         
-        # جلب العدد الإجمالي الفعلي للمستخدمين من قاعدة البيانات
-        total_users = users_collection.count_documents({})
+        # تجميع بيانات المستخدم الجديد لتنبيه المالك
+        first_name = message.from_user.first_name if message.from_user.first_name else "لا يوجد"
+        last_name = message.from_user.last_name if message.from_user.last_name else ""
+        full_name = f"{first_name} {last_name}".strip()
+        username = f"@{message.from_user.username}" if message.from_user.username else "لا يوجد يوزر نيم"
         
-        # نص النبذة التعريفية للبوت
+        # إرسال التنبيه الفوري للمالك
+        admin_alert = (
+            f"👤 **مستخدم جديد دخل البوت الآن!**\n"
+            f"----------------------------------------\n"
+            f"📝 **الاسم:** {full_name}\n"
+            f"🔗 **اليوزر نيم:** {username}\n"
+            f"🆔 **الآي دي:** `{chat_id}`\n"
+            f"----------------------------------------\n"
+            f"📊 إجمالي عدد المستخدمين الحالي: {len(users)}"
+        )
+        try:
+            bot.send_message(MY_CHAT_ID, admin_alert, parse_mode="Markdown")
+        except Exception as e:
+            print(f"فشل إرسال تنبيه المستخدم الجديد للمالك: {e}")
+
+    total_users = len(users)
+    
+    try:
+        # نص مختصر، شامل واحترافي يلتزم بحدود الـ 120 حرفاً تماماً لضمان عدم حدوث خطأ
         short_bio = f"GDS STORE 💥 لخدمات الفيسبوك المتكاملة وسرعة التنفيذ. للتواصل: @Hatemgds | 👥 {total_users}"
-        
         bot.set_my_short_description(short_bio)
     except Exception as e:
-        print(f"فشل تحديث النبذة عبر المونجو: {e}")
+        print(f"فشل تحديث النبذة: {e}")
+
 
 # 1. الترحيب والقائمة الرئيسية
 @bot.message_handler(commands=['start'])
@@ -81,13 +99,14 @@ def send_welcome(message):
     if message.chat.id in user_orders:
         del user_orders[message.chat.id]
         
-    # تحديث الوصف والعداد لحظياً فور دخول المستخدم الجديد
-    update_user_count(message.chat.id)
+    # تحديث الوصف والعداد لحظياً وإرسال التنبيه فور دخول المستخدم الجديد
+    update_user_count(message)
         
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row('🛍️ خدمات الفيسبوك', '💳 طرق الدفع')
     markup.row('👤 حسابي', '📞 خدمة العملاء')
     bot.send_message(message.chat.id, f"مرحباً بك يا {message.from_user.first_name} في GDS STORE!", reply_markup=markup)
+
 
 # 2. عرض خدمات الفيسبوك
 @bot.message_handler(func=lambda message: message.text == '🛍️ خدمات الفيسبوك')
@@ -98,6 +117,7 @@ def show_services(message):
     markup.add(types.InlineKeyboardButton("💬 تعليقات", callback_data='cat_comments'),
                types.InlineKeyboardButton("➕ اشتراكات", callback_data='cat_subs'))
     bot.send_message(message.chat.id, "اختر نوع الخدمة المطلوبة:", reply_markup=markup)
+
 
 # 3. معالجة الأزرار التفاعلية (Inline Buttons)
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cat_') or call.data.startswith('qty_') or call.data.startswith('pay_') or call.data == 'finish_order')
@@ -174,12 +194,16 @@ def callback_query(call):
                 bot.send_message(MY_CHAT_ID, alert_text, parse_mode="Markdown")
                 bot.answer_callback_query(call.id, "✅ تم إرسال طلبك بنجاح!")
                 bot.send_message(chat_id, "✅ تم إرسال طلبك بالكامل للإدارة بنجاح! جاري المراجعة والتنفيذ، انتظر لقطة شاشة التأكيد قريباً.")
+                
+                with open("orders.txt", "a", encoding="utf-8") as f:
+                    f.write(f"المستخدم: {chat_id}, الخدمة: {order_data['service']}, الكمية: {order_data['qty']} - طلب مكتمل\n")
             except Exception as e:
                 print(f"فشل إرسال التنبيه الختامي: {e}")
             
             del user_orders[chat_id]
         else:
             bot.answer_callback_query(call.id, "⚠️ الرجاء إرسال الرابط وصورة الإشعار أولاً!", show_alert=True)
+
 
 # 4. معالجة الأزرار الثابتة العامة
 @bot.message_handler(func=lambda message: message.text in ['💳 طرق الدفع', '📞 خدمة العملاء', '👤 حسابي'])
@@ -196,6 +220,7 @@ def handle_menu_buttons(message):
         bot.send_message(message.chat.id, "للتواصل: @Hatemgds")
     elif message.text == '👤 حسابي':
         bot.send_message(message.chat.id, "معلومات حسابك:\nالرصيد الحالي: 0.00$")
+
 
 # 5. استلام الصور والنصوص بشكل متتابع وتجميعها من الزبائن
 @bot.message_handler(content_types=['photo', 'text'], func=lambda message: message.chat.id in user_orders and user_orders[message.chat.id].get('status') == 'waiting_payment_info')
@@ -225,6 +250,7 @@ def receive_payment_and_link(message):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("✅ تأكيد وإرسال الطلب بالإشعار", callback_data='finish_order'))
     bot.send_message(chat_id, "📥 تم استلام رسالتك بنجاح في نظام التجميع.\nإذا انتهيت من إرسال (الرابط + صورة الإشعار)، اضغط على الزر أدناه لتأكيد وإرسال طلبك النهائي للادارة:", reply_markup=markup)
+
 
 # 6. أمر الأدمن: المراسلة المباشرة
 @bot.message_handler(commands=['send'])
@@ -262,6 +288,7 @@ def direct_send(message):
                               "1️⃣ **لإرسال نص:** اكتب `/send رقم_الزبون نص الرسالة`\n"
                               "2️⃣ **لإرسال صورة:** قم بعمل رد (Reply) على الصورة واكتب `/send رقم_الزبون`")
 
+
 # 7. أمر الأدمن: الرد التلقائي عبر الـ Reply
 @bot.message_handler(content_types=['photo', 'text'], func=lambda message: str(message.chat.id) == MY_CHAT_ID and message.reply_to_message)
 def reply_to_user_via_bot(message):
@@ -285,26 +312,23 @@ def reply_to_user_via_bot(message):
         bot.reply_to(message, f"❌ حدث خطأ أثناء الإرسال: {e}")
 
 
-# حذف الـ Webhook القديم وتحديث الوصف قسرياً وفورياً بمجرد تشغيل الكود وتفادي الأخطاء
+# تحديث الوصف قسرياً وفورياً بمجرد تشغيل الكود وتفادي الأخطاء
 try:
-    # هذا السطر السحري سيحذف أي تضارب (Conflict) أو جلسة معلقة على التوكن فوراً
-    bot.remove_webhook()
-    time.sleep(1) # انتظار ثانية للتأكد من انتهاء الحذف
-    
     update_user_count()
-    print("تم تحديث النبذة بنجاح وحذف الـ Webhook المعلق!")
+    print("تم تحديث النبذة بنجاح دون تخطي الحد المسموح!")
 except Exception as e:
     print(f"حدث خطأ أثناء التحديث التلقائي: {e}")
 
-# تشغيل البوت في الخلفية أولاً (Thread)
+
+# تشغيل البوت في الخلفية أولاً (Thread) لحل مشكلة تعليق gunicorn
 def start_bot():
-    print("جاري تشغيل البوت بأمان بعد إزالة التضارب...")
-    bot.infinity_polling(none_stop=True, timeout=30, long_polling_timeout=30)
+    bot.infinity_polling(none_stop=True)
 
 bot_thread = Thread(target=start_bot)
 bot_thread.start()
 
-# تشغيل خادم Flask بشكل أساسي ومباشر في واجهة الكود ليرتبط بـ gunicorn
+
+# تشغيل خادم Flask بشكل أساسي ومباشر في واجهة الكود ليرتبط بـ gunicorn ويفوز بفحص المنفذ
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
