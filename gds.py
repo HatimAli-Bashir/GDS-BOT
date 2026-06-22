@@ -4,6 +4,14 @@ import time
 import os
 from flask import Flask
 from threading import Thread
+from pymongo import MongoClient
+
+# جلب رابط المونجو من متغيرات البيئة
+MONGO_URI = os.environ.get('MONGO_URI')
+
+# الاتصال بقاعدة البيانات
+client = MongoClient(MONGO_URI)
+db = client['GDS_STORE_DB']  # يمكنك كتابة اسم قاعدة بياناتك هنا بدلاً من GDS_STORE_DB إذا أردت
 
 # التوكن الخاص بي
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
