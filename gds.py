@@ -2,10 +2,12 @@ import telebot
 from telebot import types
 import time
 
-# إعداد التوكن والـ ID الصحيح الخاص بك (حاتم)
-API_TOKEN = '8504939282:AAFXgLI_TRWfjO9ZYDoq3UCI5vThreE_8BA'
+# التوكن الخاص بي
+import os
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
 MY_CHAT_ID = '8010266076'
-bot = telebot.TeleBot(API_TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN)
+
 
 # قاموس لحفظ الحالات وبيانات الطلب المعلق
 user_orders = {}
