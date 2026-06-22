@@ -289,12 +289,14 @@ try:
 except Exception as e:
     print(f"حدث خطأ أثناء التحديث التلقائي: {e}")
 
-# تفعيل السيرفر الوهمي للـ Web Service أولاً لحل مشكلة المنافذ
-keep_alive()
+# تشغيل البوت في الخلفية أولاً (Thread) لحل مشكلة تعليق gunicorn
+def start_bot():
+    bot.infinity_polling(none_stop=True)
 
-# تشغيل مستمر ومحمي ضد التوقف المفاجئ للبوت
-while True:
-    try:
-        bot.polling(none_stop=True)
-    except Exception as e:
-        time.sleep(5)
+bot_thread = Thread(target=start_bot)
+bot_thread.start()
+
+# تشغيل خادم Flask بشكل أساسي ومباشر في واجهة الكود ليرتبط بـ gunicorn ويفوز بفحص المنفذ
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
