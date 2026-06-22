@@ -284,21 +284,27 @@ def reply_to_user_via_bot(message):
     except Exception as e:
         bot.reply_to(message, f"❌ حدث خطأ أثناء الإرسال: {e}")
 
-# تحديث الوصف قسرياً وفورياً بمجرد تشغيل الكود وتفادي الأخطاء
+
+# حذف الـ Webhook القديم وتحديث الوصف قسرياً وفورياً بمجرد تشغيل الكود وتفادي الأخطاء
 try:
+    # هذا السطر السحري سيحذف أي تضارب (Conflict) أو جلسة معلقة على التوكن فوراً
+    bot.remove_webhook()
+    time.sleep(1) # انتظار ثانية للتأكد من انتهاء الحذف
+    
     update_user_count()
-    print("تم تحديث النبذة بنجاح دون تخطي الحد المسموح!")
+    print("تم تحديث النبذة بنجاح وحذف الـ Webhook المعلق!")
 except Exception as e:
     print(f"حدث خطأ أثناء التحديث التلقائي: {e}")
 
-# تشغيل البوت في الخلفية أولاً (Thread) لحل مشكلة تعليق gunicorn
+# تشغيل البوت في الخلفية أولاً (Thread)
 def start_bot():
-    bot.infinity_polling(none_stop=True)
+    print("جاري تشغيل البوت بأمان بعد إزالة التضارب...")
+    bot.infinity_polling(none_stop=True, timeout=30, long_polling_timeout=30)
 
 bot_thread = Thread(target=start_bot)
 bot_thread.start()
 
-# تشغيل خادم Flask بشكل أساسي ومباشر في واجهة الكود ليرتبط بـ gunicorn ويفوز بفحص المنفذ
+# تشغيل خادم Flask بشكل أساسي ومباشر في واجهة الكود ليرتبط بـ gunicorn
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
