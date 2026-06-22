@@ -1,12 +1,30 @@
 import telebot
 from telebot import types
 import time
+import os
+from flask import Flask
+from threading import Thread
 
 # التوكن الخاص بي
-import os
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 MY_CHAT_ID = '8010266076'
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# إعداد السيرفر الوهمي لتخطي فحص المنافذ (Ports) في Render
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "البوت يعمل بنجاح!"
+
+def run():
+    # Render يمرر المنفذ تلقائياً عبر هذا المتغير
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
 
 # قاموس لحفظ الحالات وبيانات الطلب
@@ -271,7 +289,10 @@ try:
 except Exception as e:
     print(f"حدث خطأ أثناء التحديث التلقائي: {e}")
 
-# تشغيل مستمر
+# تفعيل السيرفر الوهمي للـ Web Service أولاً لحل مشكلة المنافذ
+keep_alive()
+
+# تشغيل مستمر ومحمي ضد التوقف المفاجئ للبوت
 while True:
     try:
         bot.polling(none_stop=True)
