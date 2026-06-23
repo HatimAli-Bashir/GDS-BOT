@@ -245,7 +245,9 @@ def receive_payment_and_link(message):
             print(f"فشل توجيه الصورة: {e}")
             
     else:
-        user_orders[chat_id]['data_collected'].append(message.text)
+        # تعديل لحماية الرابط من رموز الماركدوان التي قد تسبب خطأ
+        safe_text = message.text.replace("_", "\\_")
+        user_orders[chat_id]['data_collected'].append(safe_text)
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("✅ تأكيد وإرسال الطلب بالإشعار", callback_data='finish_order'))
